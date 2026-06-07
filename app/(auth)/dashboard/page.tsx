@@ -398,7 +398,11 @@ export default async function DashboardPage() {
                       {applicationStatusLabel[application.status]}
                     </Badge>
                   </div>
-                  <ProjectCard project={toProjectCardData(application.project)} showBookmark={false} />
+                  <ProjectCard
+                    project={toProjectCardData(application.project)}
+                    showBookmark={false}
+                    showStatus={false}
+                  />
                 </div>
               ))}
             </div>

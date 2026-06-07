@@ -34,9 +34,15 @@ interface ProjectCardProps {
   project: ProjectCardData;
   isBookmarked?: boolean;
   showBookmark?: boolean;
+  showStatus?: boolean;
 }
 
-export default function ProjectCard({ project, isBookmarked = false, showBookmark = true }: ProjectCardProps) {
+export default function ProjectCard({
+  project,
+  isBookmarked = false,
+  showBookmark = true,
+  showStatus = true,
+}: ProjectCardProps) {
   return (
     <Link href={`/projects/${project.id}`} className="block h-full group">
       <Card className="hover:shadow-md border border-border/60 hover:border-primary/20 transition-all duration-300 hover:-translate-y-1 cursor-pointer h-full flex flex-col justify-between bg-card overflow-hidden rounded-xl">
@@ -51,9 +57,11 @@ export default function ProjectCard({ project, isBookmarked = false, showBookmar
                   <BookmarkButton projectId={project.id} initialBookmarked={isBookmarked} />
                 </div>
               )}
-              <Badge variant={statusVariantMap[project.status]} className="font-mono text-xs shadow-none">
-                {statusLabelMap[project.status]}
-              </Badge>
+              {showStatus ? (
+                <Badge variant={statusVariantMap[project.status]} className="font-mono text-xs shadow-none">
+                  {statusLabelMap[project.status]}
+                </Badge>
+              ) : null}
             </div>
           </div>
         </CardHeader>
@@ -101,4 +109,3 @@ export default function ProjectCard({ project, isBookmarked = false, showBookmar
     </Link>
   );
 }
-
