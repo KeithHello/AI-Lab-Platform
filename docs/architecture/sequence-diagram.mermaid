@@ -1,0 +1,316 @@
+sequenceDiagram
+    %% =====================================================
+    %% 接案平台 MVP — 完整時序圖
+    %% 涵蓋：核心案件流程、AI 輔助審核、舉報處理、審核開關
+    %% =====================================================
+
+    actor Client as 發案方
+    actor Freelancer as 接案者
+    actor Admin as 管理員
+    participant Browser as 瀏覽器
+    participant NextJS as Next.js Server
+    participant Clerk as Clerk 認證
+    participant Prisma as Prisma / PostgreSQL
+    participant Agent as AI Agent（選用）
+
+    %% =====================================================
+    %% 流程 1：核心案件生命週期
+    %% =====================================================
+
+    rect rgb(240, 248, 255)
+        Note over Client,Prisma: === 核心案件生命週期 ===
+    end
+
+    Client->>Browser: 登入平台
+    Browser->>Clerk: Google / 郵箱登入
+    Clerk-->>Browser: JWT Session Token
+    Browser->>NextJS: 首次登入 → /onboarding
+    NextJS->>Prisma: upsert User (clerkId, email)
+    Prisma-->>NextJS: User record
+    Client->>Browser: 填寫 Onboarding 表單（基本資訊、技能、角色）
+    Browser->>NextJS: Server Action: completeOnboarding()
+    NextJS->>Prisma: update User (name, bio, role, skills, onboardingCompleted)
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 導向 /dashboard
+
+    Client->>Browser: 點擊「發布案件」
+    Browser->>NextJS: /projects/new 頁面載入
+    NextJS->>Prisma: findMany Category (isActive: true)
+    Prisma-->>NextJS: 6 大分類
+    NextJS->>Prisma: findMany SkillTag (isActive: true)
+    Prisma-->>NextJS: 41 推薦標籤（含分類關聯）
+    NextJS-->>Browser: 案件表單（含分類下拉、標籤勾選、幣別下拉）
+
+    Client->>Browser: 選擇分類「網站開發」
+    Browser->>Browser: SkillTagInput 過濾顯示「網站開發」推薦標籤
+    Client->>Browser: 填寫案件詳情（名稱、背景、敘述、交付成果、驗收標準）
+    Client->>Browser: 設定獎金：NT$ 30,000（金額 + 幣別 TWD）
+    Client->>Browser: 選擇技能標籤：React, Next.js, TypeScript
+    Client->>Browser: 設定截止日期、保密要求、參考資料
+
+    Client->>Browser: 點擊「發佈案件」
+    Browser->>NextJS: Server Action: publishProject(input)
+    NextJS->>NextJS: auth().protect() 確認 Session
+    NextJS->>NextJS: Zod validate(input)
+    NextJS->>Prisma: check ReviewSetting (PROJECT_PUBLISH)
+    Prisma-->>NextJS: isEnabled: false（自動通過）
+
+    alt 審核開關關閉（預設）
+        NextJS->>Prisma: create Project (status: OPEN, isApproved: true)
+        Prisma-->>NextJS: Project created
+        NextJS-->>Browser: 案件已發佈，導向案件詳細頁
+    else 審核開關開啟
+        NextJS->>Prisma: create Project (status: OPEN, isApproved: false)
+        Prisma-->>NextJS: Project created (pending review)
+        NextJS-->>Browser: 案件已提交，等待管理員審核
+    end
+
+    Freelancer->>Browser: 瀏覽 /projects 案件列表
+    Browser->>NextJS: 載入案件列表（含搜尋/篩選參數）
+    NextJS->>Prisma: findMany Project (status: OPEN, isApproved: true)
+    Prisma-->>NextJS: 案件列表（含分類、技能、獎金、申請人數）
+    NextJS-->>Browser: ProjectCard 列表
+
+    Freelancer->>Browser: 點擊案件標題
+    Browser->>NextJS: /projects/[projectId]
+    NextJS->>Prisma: findUnique Project (include category, skills, client)
+    Prisma-->>NextJS: 完整案件資訊
+    NextJS-->>Browser: 案件詳細頁（含「申請案件」按鈕）
+
+    Freelancer->>Browser: 點擊「申請案件」
+    Browser->>NextJS: /projects/[projectId]/apply
+    Freelancer->>Browser: 填寫申請表單（說明、預計方式、天數、作品 URL）
+    Browser->>NextJS: Server Action: applyProject(input)
+    NextJS->>Prisma: check not duplicate (projectId, freelancerId)
+    NextJS->>Prisma: create Application (status: PENDING)
+    Prisma-->>NextJS: Application created
+    NextJS-->>Browser: 申請已提交
+
+    Client->>Browser: 查看案件申請者列表
+    Browser->>NextJS: /projects/[projectId]/applications
+    NextJS->>Prisma: findMany Application (projectId, status: PENDING, include freelancer)
+    Prisma-->>NextJS: 申請者列表（含接案者資料、技能、預計天數）
+    NextJS-->>Browser: ApplicantCard 列表
+
+    Client->>Browser: 點擊「選擇」接案者
+    Browser->>NextJS: Server Action: selectFreelancer(projectId, freelancerId)
+    NextJS->>Prisma: transaction [
+        update Project (status: IN_PROGRESS, selectedFreelancerId)
+        update Application (selected: ACCEPTED)
+        updateMany Application (others: REJECTED)
+    ]
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 已選定接案者，案件進行中
+
+    Freelancer->>Browser: 點擊「提交成果」
+    Browser->>NextJS: /projects/[projectId]/submit
+    Freelancer->>Browser: 填寫提交表單（說明、Demo/GitHub/文件/檔案 URL）
+    Browser->>NextJS: Server Action: submitWork(input)
+    NextJS->>Prisma: create Submission + update Project (status: SUBMITTED)
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 成果已提交
+
+    Client->>Browser: 點擊「驗收成果」
+    Browser->>NextJS: /projects/[projectId]/review-submission
+    NextJS->>Prisma: findUnique Project + latest Submission
+    Prisma-->>NextJS: 原始需求 + 提交成果
+    NextJS-->>Browser: 對照面板（左：需求 / 右：成果）
+
+    alt 通過驗收
+        Client->>Browser: 點擊「通過驗收」
+        Browser->>NextJS: Server Action: acceptSubmission(projectId)
+        NextJS->>Prisma: update Project (status: COMPLETED)
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 案件已完成，請進行評價
+    else 要求修改
+        Client->>Browser: 點擊「要求修改」→ 填寫修改原因與要求
+        Browser->>NextJS: Server Action: requestRevision(projectId, reason)
+        NextJS->>Prisma: update Project (status: REVISION_REQUESTED, increment revisionCount)
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 修改要求已發送
+
+        Freelancer->>Browser: 查看修改要求後重新提交
+        Browser->>NextJS: Server Action: submitWork(input)
+        NextJS->>Prisma: create Submission + update Project (status: SUBMITTED)
+        Prisma-->>NextJS: OK
+        Note right of Freelancer: 修改次數無上限，revisionCount 持續遞增
+    end
+
+    Note over Client,Freelancer: 案件完成 → 進入雙盲評價流程
+
+    Client->>Browser: 填寫評價（星級、文字、是否再合作）
+    Browser->>NextJS: Server Action: submitReview(input)
+    NextJS->>Prisma: create Review (reviewer: Client, reviewee: Freelancer)
+    Prisma-->>NextJS: Review saved（暫不公開）
+
+    Freelancer->>Browser: 填寫評價（星級、文字、是否再合作）
+    Browser->>NextJS: Server Action: submitReview(input)
+    NextJS->>Prisma: create Review (reviewer: Freelancer, reviewee: Client)
+    NextJS->>Prisma: check if both reviews submitted
+    Prisma-->>NextJS: 雙方皆已提交
+    NextJS-->>Browser: 雙方評價現已互相可見
+
+    %% =====================================================
+    %% 流程 2：AI 輔助審核案件詳情
+    %% =====================================================
+
+    rect rgb(255, 248, 240)
+        Note over Client,Agent: === AI 輔助審核案件詳情（REQ-25）===
+    end
+
+    Client->>Browser: 填寫案件表單（可選步驟）
+    Client->>Browser: 點擊「AI 輔助審核」
+    Browser->>NextJS: Server Action: aiReviewProject(input)
+    NextJS->>Agent: 發送案件內容（名稱、背景、敘述、交付成果、驗收標準）
+    Agent->>Agent: 分析：完整性、清晰度、可衡量性
+    Agent-->>NextJS: 審核結果與改進建議
+    NextJS-->>Browser: 顯示改進建議卡片
+    Note right of Browser: 範例建議：<br/>- 交付標準不夠具體，建議補充可衡量指標<br/>- 背景描述清晰，無需修改<br/>- 建議補充技術限制說明
+    Client->>Client: 根據建議修改 → 繼續發布，或跳過
+
+    %% =====================================================
+    %% 流程 3：舉報處理（REQ-26）
+    %% =====================================================
+
+    rect rgb(255, 240, 240)
+        Note over Client,Admin: === 舉報處理流程（REQ-26）===
+    end
+
+    Client->>Browser: 點擊使用者頭像 →「舉報」
+    Browser->>NextJS: /report 頁面載入
+    Client->>Browser: 選擇舉報類型、填寫描述、可選關聯案件
+    Browser->>NextJS: Server Action: submitReport(input)
+    NextJS->>Prisma: create Report (status: PENDING)
+    Prisma-->>NextJS: Report created
+    NextJS-->>Browser: 舉報已提交，平台將盡快處理
+
+    Admin->>Browser: 進入管理後台 /admin/reports
+    Browser->>NextJS: 載入舉報列表
+    NextJS->>Prisma: findMany Report (include reporter, reportedUser)
+    Prisma-->>NextJS: PENDING 狀態舉報列表
+    NextJS-->>Browser: ReportTable（類型、舉報方、被舉報方、時間、狀態）
+
+    Admin->>Browser: 點擊舉報記錄查看詳情
+    Browser->>NextJS: 載入舉報完整資訊
+    NextJS->>Prisma: findUnique Report (include project, both users)
+    Prisma-->>NextJS: 完整舉報資訊
+    NextJS-->>Browser: 舉報詳情面板
+
+    Admin->>Browser: 將狀態改為 UNDER_REVIEW
+    Browser->>NextJS: Server Action: updateReportStatus(id, UNDER_REVIEW)
+    NextJS->>Prisma: update Report (status: UNDER_REVIEW)
+    Prisma-->>NextJS: OK
+
+    Admin->>Admin: 評估舉報內容
+
+    alt 舉報成立
+        Admin->>Browser: 選擇處理方式（警告 / 停用），填寫結論
+        Browser->>NextJS: Server Action: resolveReport(id, RESOLVED, resolution)
+        NextJS->>Prisma: update Report (status: RESOLVED, resolution)
+        NextJS->>Prisma: update User (status: DISABLED) // if 停用
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 舉報已處理，被舉報方已停用
+    else 舉報不成立
+        Admin->>Browser: 填寫駁回原因
+        Browser->>NextJS: Server Action: resolveReport(id, DISMISSED, resolution)
+        NextJS->>Prisma: update Report (status: DISMISSED, resolution)
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 舉報已駁回
+    end
+
+    %% =====================================================
+    %% 流程 4：審核開關管理（REQ-28）
+    %% =====================================================
+
+    rect rgb(240, 255, 240)
+        Note over Admin,Prisma: === 審核開關管理（REQ-28）===
+    end
+
+    Admin->>Browser: 進入管理後台 /admin/settings
+    Browser->>NextJS: 載入審核設定
+    NextJS->>Prisma: findMany ReviewSetting
+    Prisma-->>NextJS: [{reviewType: USER_ONBOARDING, isEnabled: false}, {reviewType: PROJECT_PUBLISH, isEnabled: false}]
+    NextJS-->>Browser: 兩個 Toggle 開關
+
+    Admin->>Browser: 將「案件審核」開關切換為 ON
+    Browser->>NextJS: Server Action: updateReviewSetting(PROJECT_PUBLISH, true)
+    NextJS->>Prisma: update ReviewSetting (isEnabled: true)
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 案件審核已啟用
+
+    Note over Client,Prisma: 之後發布的案件需要管理員審核
+
+    Client->>Browser: 發布新案件
+    Browser->>NextJS: publishProject(input)
+    NextJS->>Prisma: find ReviewSetting (PROJECT_PUBLISH)
+    Prisma-->>NextJS: isEnabled: true
+    NextJS->>Prisma: create Project (status: OPEN, isApproved: false)
+    Prisma-->>NextJS: Project created (pending approval)
+
+    Admin->>Browser: 進入 /admin/projects 查看待審核案件
+    Browser->>NextJS: 載入待審核案件（isApproved: false）
+    NextJS->>Prisma: findMany Project (isApproved: false have status OPEN)
+    Prisma-->>NextJS: 待審核案件列表
+
+    alt 審核通過
+        Admin->>Browser: 點擊「審核通過」
+        Browser->>NextJS: Server Action: approveProject(projectId)
+        NextJS->>Prisma: update Project (isApproved: true)
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 案件現已公開顯示
+    else 審核拒絕
+        Admin->>Browser: 點擊「拒絕」+ 填寫原因
+        Browser->>NextJS: Server Action: rejectProject(projectId, reason)
+        NextJS->>Prisma: update Project (status: DRAFT, isApproved: false) //退回草稿
+        Prisma-->>NextJS: OK
+        NextJS-->>Browser: 案件已退回草稿，發案方可修改後重新提交
+    end
+
+    %% =====================================================
+    %% 流程 5：糾紛記錄（REQ-30）
+    %% =====================================================
+
+    rect rgb(248, 240, 255)
+        Note over Admin,Prisma: === 糾紛記錄管理（REQ-30）===
+    end
+
+    Admin->>Browser: 進入 /admin/disputes
+    Browser->>NextJS: 載入糾紛列表
+    NextJS->>Prisma: findMany Dispute (include project, reporter, respondent)
+    Prisma-->>NextJS: 糾紛記錄列表
+    NextJS-->>Browser: DisputeTable（類型、案件、雙方、狀態、時間）
+
+    Admin->>Browser: 點擊糾紛記錄查看詳情
+    Browser->>NextJS: 載入糾紛完整資訊
+    NextJS->>Prisma: findUnique Dispute (include project, both users)
+    Prisma-->>NextJS: 雙方陳述、案件資訊
+    NextJS-->>Browser: 糾紛詳情面板（申訴方陳述 vs 被申訴方回應）
+
+    Admin->>Browser: 填寫處理結論，將狀態設為 RESOLVED
+    Browser->>NextJS: Server Action: resolveDispute(id, resolution)
+    NextJS->>Prisma: update Dispute (status: RESOLVED, resolution)
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 糾紛已解決
+
+    %% =====================================================
+    %% 流程 6：平台公告（REQ-29）
+    %% =====================================================
+
+    rect rgb(240, 255, 248)
+        Note over Admin,Prisma: === 平台公告管理（REQ-29）===
+    end
+
+    Admin->>Browser: 進入 /admin/announcements
+    Browser->>NextJS: 載入公告列表
+    NextJS->>Prisma: findMany Announcement
+    Prisma-->>NextJS: 公告列表
+    NextJS-->>Browser: AnnouncementTable
+
+    Admin->>Browser: 點擊「新增公告」
+    Admin->>Browser: 填寫標題、內容
+    Browser->>NextJS: Server Action: createAnnouncement(input)
+    NextJS->>Prisma: create Announcement (isActive: true)
+    Prisma-->>NextJS: OK
+    NextJS-->>Browser: 公告已發佈
+
+    Note over Client,Freelancer: 所有使用者登入後在首頁/Dashboard 看到 Banner 公告

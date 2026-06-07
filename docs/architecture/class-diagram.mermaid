@@ -1,0 +1,337 @@
+classDiagram
+    %% =====================================================
+    %% 接案平台 MVP — 完整類別圖
+    %% 涵蓋所有實體：核心模型 + 新增（Category、SkillTag、Report、Dispute、Announcement、ReviewSetting）
+    %% =====================================================
+
+    %% =====================================================
+    %% 枚舉
+    %% =====================================================
+
+    class UserRole {
+        <<enumeration>>
+        CLIENT
+        FREELANCER
+        BOTH
+    }
+
+    class UserStatus {
+        <<enumeration>>
+        ACTIVE
+        DISABLED
+    }
+
+    class ProjectStatus {
+        <<enumeration>>
+        DRAFT
+        OPEN
+        IN_PROGRESS
+        SUBMITTED
+        REVISION_REQUESTED
+        COMPLETED
+        CANCELLED
+        DISABLED
+    }
+
+    class Currency {
+        <<enumeration>>
+        TWD
+        USD
+        JPY
+        HKD
+        CNY
+    }
+
+    class ApplicationStatus {
+        <<enumeration>>
+        PENDING
+        ACCEPTED
+        REJECTED
+    }
+
+    class ReportStatus {
+        <<enumeration>>
+        PENDING
+        UNDER_REVIEW
+        RESOLVED
+        DISMISSED
+    }
+
+    class DisputeStatus {
+        <<enumeration>>
+        OPEN
+        UNDER_REVIEW
+        RESOLVED
+    }
+
+    class ReviewSettingType {
+        <<enumeration>>
+        USER_ONBOARDING
+        PROJECT_PUBLISH
+    }
+
+    %% =====================================================
+    %% 核心模型
+    %% =====================================================
+
+    class User {
+        +String id
+        +String clerkId <<unique>>
+        +String email <<unique>>
+        +String name
+        +String? avatarUrl
+        +String? bio
+        +UserRole role
+        +UserStatus status
+        +Boolean isAdmin
+        +Boolean onboardingCompleted
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +UserSkill[] skills
+        +Project[] ownedProjects
+        +Project[] assignedProjects
+        +Application[] applications
+        +Submission[] submissions
+        +Review[] givenReviews
+        +Review[] receivedReviews
+        +Report[] sentReports
+        +Report[] receivedReports
+        +Dispute[] sentDisputes
+        +Dispute[] receivedDisputes
+    }
+
+    class Category {
+        +String id
+        +String name <<unique>>
+        +String? description
+        +Boolean isActive
+        +Int sortOrder
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +SkillTag[] skillTags
+        +Project[] projects
+    }
+
+    class SkillTag {
+        +String id
+        +String name <<unique>>
+        +String? categoryId
+        +Boolean isActive
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +Category? category
+        +ProjectSkill[] projectSkills
+        +UserSkill[] userSkills
+    }
+
+    class Project {
+        +String id
+        +String title
+        +String categoryId
+        +String background
+        +String description
+        +String deliverables
+        +String acceptanceCriteria
+        +Decimal budget
+        +Currency currency
+        +DateTime deadline
+        +ProjectStatus status
+        +Boolean confidentialityRequired
+        +String? references
+        +String clientId
+        +String? selectedFreelancerId
+        +Int revisionCount
+        +String? revisionReason
+        +Boolean isApproved
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +Category category
+        +User client
+        +User? selectedFreelancer
+        +ProjectSkill[] projectSkills
+        +Application[] applications
+        +Submission[] submissions
+        +Review[] reviews
+        +Report[] reports
+        +Dispute[] disputes
+    }
+
+    class ProjectSkill {
+        +String id
+        +String projectId
+        +String skillTagId
+        --
+        +Project project
+        +SkillTag skillTag
+    }
+
+    class UserSkill {
+        +String id
+        +String userId
+        +String skillTagId
+        --
+        +User user
+        +SkillTag skillTag
+    }
+
+    class Application {
+        +String id
+        +String projectId
+        +String freelancerId
+        +String description
+        +String approach
+        +Int estimatedDays
+        +String? portfolioUrls
+        +ApplicationStatus status
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +Project project
+        +User freelancer
+    }
+
+    class Submission {
+        +String id
+        +String projectId
+        +String freelancerId
+        +String description
+        +String? demoUrl
+        +String? githubUrl
+        +String? documentUrl
+        +String? fileUrls
+        +DateTime createdAt
+        --
+        +Project project
+        +User freelancer
+    }
+
+    class Review {
+        +String id
+        +String projectId
+        +String reviewerId
+        +String revieweeId
+        +Int rating
+        +String? comment
+        +Boolean wouldCollaborateAgain
+        +DateTime createdAt
+        --
+        +Project project
+        +User reviewer
+        +User reviewee
+    }
+
+    %% =====================================================
+    %% 新增模型（v2.0）
+    %% =====================================================
+
+    class Report {
+        +String id
+        +String reporterId
+        +String reportedUserId
+        +String? projectId
+        +String type
+        +String description
+        +ReportStatus status
+        +String? resolution
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +User reporter
+        +User reportedUser
+        +Project? project
+    }
+
+    class Dispute {
+        +String id
+        +String projectId
+        +String reporterId
+        +String respondentId
+        +String type
+        +String description
+        +String? respondentStatement
+        +DisputeStatus status
+        +String? resolution
+        +DateTime createdAt
+        +DateTime updatedAt
+        --
+        +Project project
+        +User reporter
+        +User respondent
+    }
+
+    class Announcement {
+        +String id
+        +String title
+        +String content
+        +Boolean isActive
+        +DateTime createdAt
+        +DateTime updatedAt
+    }
+
+    class ReviewSetting {
+        +String id
+        +ReviewSettingType reviewType <<unique>>
+        +Boolean isEnabled
+        +DateTime createdAt
+        +DateTime updatedAt
+    }
+
+    %% =====================================================
+    %% 關聯關係
+    %% =====================================================
+
+    %% User 核心關聯
+    User "1" --o "0..*" UserSkill : has skills
+    User "1" --o "0..*" Project : publishes (client)
+    User "1" --o "0..*" Project : assigned to (freelancer)
+    User "1" --o "0..*" Application : submits
+    User "1" --o "0..*" Submission : submits
+    User "1" --o "0..*" Review : reviews (as reviewer)
+    User "1" --o "0..*" Review : receives review (as reviewee)
+
+    %% User 新增關聯（v2.0）
+    User "1" --o "0..*" Report : reports (as reporter)
+    User "1" --o "0..*" Report : is reported (as reportedUser)
+    User "1" --o "0..*" Dispute : files dispute (as reporter)
+    User "1" --o "0..*" Dispute : responds to dispute (as respondent)
+
+    %% Category 關聯
+    Category "1" --o "0..*" SkillTag : contains
+    Category "1" --o "0..*" Project : categorizes
+
+    %% SkillTag 多對多關聯
+    SkillTag "1" --o "0..*" ProjectSkill : linked to projects
+    Project "1" --o "0..*" ProjectSkill : has skills
+    SkillTag "1" --o "0..*" UserSkill : linked to users
+    UserSkill --|> SkillTag
+    UserSkill --|> User
+
+    %% Application 關聯
+    Project "1" --o "0..*" Application : receives
+
+    %% Submission 關聯
+    Project "1" --o "0..*" Submission : has submissions
+
+    %% Review 關聯（雙盲評價）
+    Project "1" --o "0..*" Review : has reviews
+
+    %% Report 關聯
+    Project "1" --o "0..*" Report : is reported in
+
+    %% Dispute 關聯
+    Project "1" --o "0..*" Dispute : has disputes
+
+    %% =====================================================
+    %% 圖例說明
+    %% =====================================================
+
+    note for User "Clerk 認證關聯：<br/>• clerkId → Clerk User ID<br/>• 首次登入自動同步<br/>• isAdmin 手動設定"
+    note for Project "Reward 模型：<br/>• budget (Decimal) + currency (Currency)<br/>• 支援 TWD, USD, JPY, HKD, CNY<br/>• 審核：isApproved 決定是否公開"
+    note for Review "雙盲評價規則：<br/>• 雙方皆提交後才互相可見<br/>• 提交後不可修改<br/>• unique(projectId, reviewerId, revieweeId)"
+    note for Report "舉報流程：<br/>• PENDING → UNDER_REVIEW → RESOLVED/DISMISSED<br/>• 可選關聯案件<br/>• 管理員處理"
+    note for Dispute "糾紛記錄：<br/>• OPEN → UNDER_REVIEW → RESOLVED<br/>• 必關聯案件<br/>• 含雙方陳述"
+    note for ReviewSetting "審核開關：<br/>• isEnabled=false → 自動通過（預設）<br/>• isEnabled=true → 人工審核<br/>• 不影響已存在的資料"

@@ -1,0 +1,423 @@
+// =====================================================
+// 檔案：prisma/schema.prisma
+// 專案：freelancer_platform_mvp
+// 資料庫：PostgreSQL (Supabase)
+// 說明：接案平台 MVP 完整資料模型，單一真相來源
+// =====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================
+// 一、全域枚舉
+// =====================================================
+
+enum UserRole {
+  CLIENT
+  FREELANCER
+  BOTH
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING
+}
+
+enum ProjectStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  SUBMITTED
+  REVISION_REQUESTED
+  COMPLETED
+  CANCELLED
+  DISABLED
+}
+
+enum Currency {
+  TWD
+  USD
+  JPY
+  HKD
+  CNY
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+}
+
+enum ReviewSettingType {
+  USER_ONBOARDING
+  PROJECT_PUBLISH
+}
+
+// =====================================================
+// 二、使用者模型
+// =====================================================
+
+model User {
+  id                  String        @id @default(cuid())
+  clerkId             String        @unique
+  email               String        @unique
+  name                String
+  avatarUrl           String?
+  bio                 String?
+  role                UserRole      @default(BOTH)
+  canPostProjects     Boolean       @default(true)
+  canApplyProjects    Boolean       @default(true)
+  status              UserStatus    @default(ACTIVE)
+  isAdmin             Boolean       @default(false)
+  onboardingCompleted Boolean       @default(false)
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  skills              UserSkill[]
+  ownedProjects       Project[]           @relation("ClientProjects")
+  assignedProjects    Project[]           @relation("FreelancerProjects")
+  applications        Application[]
+  submissions         Submission[]
+  givenReviews        Review[]            @relation("Reviewer")
+  receivedReviews     Review[]            @relation("Reviewee")
+  sentReports         Report[]            @relation("Reporter")
+  receivedReports     Report[]            @relation("ReportedUser")
+  sentDisputes        Dispute[]           @relation("DisputeReporter")
+  receivedDisputes    Dispute[]           @relation("DisputeRespondent")
+  bookmarks           Bookmark[]
+  notifications       Notification[]
+
+  @@map("users")
+}
+
+// =====================================================
+// 三、案件分類
+// =====================================================
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  isActive    Boolean    @default(true)
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  skillTags   SkillTag[]
+  projects    Project[]
+
+  @@map("categories")
+}
+
+// =====================================================
+// 四、技能標籤
+// =====================================================
+
+model SkillTag {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  categoryId  String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category     Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  projectSkills ProjectSkill[]
+  userSkills    UserSkill[]
+
+  @@map("skill_tags")
+}
+
+// =====================================================
+// 五、案件模型（核心）
+// =====================================================
+
+model Project {
+  id                       String        @id @default(cuid())
+  title                    String
+  categoryId               String
+  background               String
+  description              String
+  deliverables             String
+  acceptanceCriteria       String
+
+  budget                   Decimal
+  currency                 Currency      @default(TWD)
+
+  deadline                 DateTime
+  status                   ProjectStatus @default(DRAFT)
+  confidentialityRequired  Boolean       @default(false)
+  references               String?
+
+  clientId                 String
+  selectedFreelancerId     String?
+
+  revisionCount            Int           @default(0)
+  revisionReason           String?
+
+  isApproved               Boolean       @default(true)
+
+  createdAt                DateTime      @default(now())
+  updatedAt                DateTime      @updatedAt
+
+  category              Category         @relation(fields: [categoryId], references: [id])
+  client                User             @relation("ClientProjects", fields: [clientId], references: [id])
+  selectedFreelancer    User?            @relation("FreelancerProjects", fields: [selectedFreelancerId], references: [id])
+  projectSkills         ProjectSkill[]
+  applications          Application[]
+  submissions           Submission[]
+  reviews               Review[]
+  reports               Report[]
+  disputes              Dispute[]
+  bookmarks             Bookmark[]
+  notifications         Notification[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([categoryId])
+  @@index([selectedFreelancerId])
+  @@map("projects")
+}
+
+// =====================================================
+// 六、案件-技能標籤關聯（多對多）
+// =====================================================
+
+model ProjectSkill {
+  id         String   @id @default(cuid())
+  projectId  String
+  skillTagId String
+
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  skillTag   SkillTag @relation(fields: [skillTagId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, skillTagId])
+  @@map("project_skills")
+}
+
+// =====================================================
+// 七、使用者-技能關聯（多對多）
+// =====================================================
+
+model UserSkill {
+  id         String   @id @default(cuid())
+  userId     String
+  skillTagId String
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillTag   SkillTag @relation(fields: [skillTagId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, skillTagId])
+  @@map("user_skills")
+}
+
+// =====================================================
+// 八、申請模型
+// =====================================================
+
+model Application {
+  id             String            @id @default(cuid())
+  projectId      String
+  freelancerId   String
+  description    String
+  approach       String
+  estimatedDays  Int
+  portfolioUrls  String?
+  status         ApplicationStatus @default(PENDING)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  freelancer     User              @relation(fields: [freelancerId], references: [id])
+
+  @@unique([projectId, freelancerId])
+  @@index([projectId])
+  @@index([freelancerId])
+  @@map("applications")
+}
+
+// =====================================================
+// 九、成果提交模型
+// =====================================================
+
+model Submission {
+  id            String   @id @default(cuid())
+  projectId     String
+  freelancerId  String
+  description   String
+  demoUrl       String?
+  githubUrl     String?
+  documentUrl   String?
+  fileUrls      String?
+  createdAt     DateTime @default(now())
+
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  freelancer    User     @relation(fields: [freelancerId], references: [id])
+
+  @@index([projectId])
+  @@map("submissions")
+}
+
+// =====================================================
+// 十、評價模型（雙盲評價）
+// =====================================================
+
+model Review {
+  id                     String   @id @default(cuid())
+  projectId              String
+  reviewerId             String
+  revieweeId             String
+  rating                 Int
+  comment                String?
+  wouldCollaborateAgain  Boolean
+  createdAt              DateTime @default(now())
+
+  project                Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reviewer               User     @relation("Reviewer", fields: [reviewerId], references: [id])
+  reviewee               User     @relation("Reviewee", fields: [revieweeId], references: [id])
+
+  @@unique([projectId, reviewerId, revieweeId])
+  @@index([revieweeId])
+  @@map("reviews")
+}
+
+// =====================================================
+// 十一、舉報模型
+// =====================================================
+
+model Report {
+  id              String       @id @default(cuid())
+  reporterId      String
+  reportedUserId  String
+  projectId       String?
+  type            String
+  description     String
+  status          ReportStatus @default(PENDING)
+  resolution      String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  reporter        User         @relation("Reporter", fields: [reporterId], references: [id])
+  reportedUser    User         @relation("ReportedUser", fields: [reportedUserId], references: [id])
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([reportedUserId])
+  @@map("reports")
+}
+
+// =====================================================
+// 十二、糾紛記錄模型
+// =====================================================
+
+model Dispute {
+  id                   String        @id @default(cuid())
+  projectId            String
+  reporterId           String
+  respondentId         String
+  type                 String
+  description          String
+  respondentStatement  String?
+  status               DisputeStatus @default(OPEN)
+  resolution           String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  project              Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  reporter             User          @relation("DisputeReporter", fields: [reporterId], references: [id])
+  respondent           User          @relation("DisputeRespondent", fields: [respondentId], references: [id])
+
+  @@index([status])
+  @@index([projectId])
+  @@map("disputes")
+}
+
+// =====================================================
+// 十三、平台公告模型
+// =====================================================
+
+model Announcement {
+  id         String   @id @default(cuid())
+  title      String
+  content    String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("announcements")
+}
+
+// =====================================================
+// 十四、審核設定模型
+// =====================================================
+
+model ReviewSetting {
+  id          String              @id @default(cuid())
+  reviewType  ReviewSettingType   @unique
+  isEnabled   Boolean             @default(false)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("review_settings")
+}
+
+// =====================================================
+// 十五、案件收藏模型（REQ-21）
+// =====================================================
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@index([userId])
+  @@map("bookmarks")
+}
+
+// =====================================================
+// 十六、通知模型（REQ-22）
+// =====================================================
+
+model Notification {
+  id               String   @id @default(cuid())
+  userId           String
+  type             String   // APPLICATION_RECEIVED, APPLICATION_ACCEPTED, SUBMISSION_RECEIVED, etc.
+  title            String
+  content          String
+  isRead           Boolean  @default(false)
+  relatedProjectId String?
+  createdAt        DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [relatedProjectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
