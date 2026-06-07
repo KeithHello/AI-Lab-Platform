@@ -171,6 +171,7 @@ async function ProjectListContent({ searchParams }: { searchParams: SearchParams
         projects={projects}
         categories={categories}
         bookmarkedIds={bookmarkedIds}
+        totalCount={total}
         initialFilters={{
           search,
           categoryId,

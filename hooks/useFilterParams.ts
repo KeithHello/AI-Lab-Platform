@@ -19,7 +19,7 @@ export function useFilterParams() {
   const sortBy = searchParams.get('sortBy') || '';
 
   const setParams = useCallback(
-    (params: Record<string, string>) => {
+    (params: Record<string, string>, options?: { replace?: boolean }) => {
       const current = new URLSearchParams(searchParams.toString());
       Object.entries(params).forEach(([key, value]) => {
         if (value) {
@@ -32,7 +32,12 @@ export function useFilterParams() {
       if (!('page' in params)) {
         current.delete('page');
       }
-      router.push(`${pathname}?${current.toString()}`);
+      const nextUrl = current.toString() ? `${pathname}?${current.toString()}` : pathname;
+      if (options?.replace) {
+        router.replace(nextUrl);
+        return;
+      }
+      router.push(nextUrl);
     },
     [pathname, router, searchParams]
   );
