@@ -16,6 +16,7 @@ import {
 import { getCurrentUser } from '@/lib/permissions';
 import { prisma } from '@/lib/prisma';
 import DashboardWorkspaceTabs from '@/components/dashboard/DashboardWorkspaceTabs';
+import { ApplicationStatus } from '@prisma/client';
 import ProjectCard from '@/components/project/ProjectCard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,27 @@ type ProjectForCard = {
   projectSkills: { skillTag: { id: string; name: string } }[];
   client: { name: string };
   _count: { applications: number };
+};
+
+type PendingApplicationForCard = {
+  id: string;
+  projectId: string;
+  description: string;
+  approach: string;
+  estimatedDays: number;
+  portfolioUrls: string | null;
+  status: ApplicationStatus;
+  freelancer: {
+    name: string;
+    email: string;
+    avatarUrl: string | null;
+    skills: { skillTag: { id: string; name: string } }[];
+  };
+  project: {
+    id: string;
+    title: string;
+    status: ProjectCardData['status'];
+  };
 };
 
 function toProjectCardData(project: ProjectForCard): ProjectCardData {
@@ -198,6 +220,7 @@ export default async function DashboardPage() {
     applications,
     assignedProjects,
     bookmarkRows,
+    clientPendingApplicationsRaw,
   ] = await Promise.all([
     canPostProjects
       ? prisma.project.count({ where: { clientId: user.id } })
@@ -300,7 +323,52 @@ export default async function DashboardPage() {
           take: 6,
         })
       : Promise.resolve([]),
+    canPostProjects
+      ? prisma.application.findMany({
+          where: {
+            status: 'PENDING',
+            project: { clientId: user.id },
+          },
+          select: {
+            id: true,
+            projectId: true,
+            description: true,
+            approach: true,
+            estimatedDays: true,
+            portfolioUrls: true,
+            status: true,
+            freelancer: {
+              select: {
+                name: true,
+                email: true,
+                avatarUrl: true,
+                skills: {
+                  include: {
+                    skillTag: {
+                      select: { id: true, name: true },
+                    },
+                  },
+                },
+              },
+            },
+            project: {
+              select: {
+                id: true,
+                title: true,
+                status: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+        })
+      : Promise.resolve([]),
   ]);
+
+  const clientPendingApplications = clientPendingApplicationsRaw as PendingApplicationForCard[];
+  const freelancerInProgressProjects = assignedProjects.filter((project) => project.status === 'IN_PROGRESS');
+  const freelancerSubmittedProjects = assignedProjects.filter((project) => project.status === 'SUBMITTED');
+  const freelancerRevisionProjects = assignedProjects.filter((project) => project.status === 'REVISION_REQUESTED');
 
   const modeLabel = isBoth ? '發案 / 接案' : canPostProjects ? '發案方' : '接案方';
   const welcomeCopy = isBoth
@@ -370,6 +438,62 @@ export default async function DashboardPage() {
             <EmptySection text="目前沒有待驗收的案件。" />
           )}
         </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">待處理申請</h3>
+            <p className="text-sm text-muted-foreground">先看申請內容，再決定是否進入合作。</p>
+          </div>
+          {clientPendingApplications.length > 0 ? (
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+              {clientPendingApplications.map((application) => (
+                <Card key={application.id} className="rounded-xl border border-border/60 shadow-sm">
+                  <CardHeader className="space-y-3 border-b bg-muted/10">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <CardTitle className="text-base">{application.freelancer.name}</CardTitle>
+                        <CardDescription>{application.project.title}</CardDescription>
+                      </div>
+                      <Badge variant={applicationStatusVariant[application.status]} className="shrink-0">
+                        {applicationStatusLabel[application.status]}
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {application.freelancer.skills.slice(0, 3).map((skill) => (
+                        <Badge key={skill.skillTag.id} variant="secondary" className="text-[10px] font-mono bg-muted/65 border-none px-2 py-0.5">
+                          {skill.skillTag.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 p-5">
+                    <p className="text-sm leading-6 text-foreground/80 line-clamp-3">{application.description}</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                        <div className="text-[11px] font-medium text-muted-foreground">申請方向</div>
+                        <div className="mt-1 line-clamp-2 text-sm text-foreground/80">{application.approach}</div>
+                      </div>
+                      <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                        <div className="text-[11px] font-medium text-muted-foreground">預計天數</div>
+                        <div className="mt-1 text-sm font-semibold text-foreground">{application.estimatedDays} 天</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Link href={`/projects/${application.projectId}/applications`}>
+                        <Button variant="outline" size="sm" className="gap-2">
+                          查看申請者
+                          <ArrowUpRight className="h-4 w-4" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <EmptySection text="目前沒有待處理的申請。" />
+          )}
+        </div>
       </div>
     </section>
   ) : null;
@@ -384,6 +508,97 @@ export default async function DashboardPage() {
       )}
 
       <div className="flex flex-col gap-8">
+        <div className="flex flex-col gap-4">
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">下一步待辦</h3>
+            <p className="text-sm text-muted-foreground">依照案件狀態，把你現在要做的事情拆開看。</p>
+          </div>
+
+          {freelancerInProgressProjects.length > 0 || freelancerSubmittedProjects.length > 0 || freelancerRevisionProjects.length > 0 ? (
+            <div className="grid gap-6 xl:grid-cols-3">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-foreground">待提交成果</h4>
+                  <p className="text-xs text-muted-foreground">案件仍在進行中，你可以開始提交。</p>
+                </div>
+                {freelancerInProgressProjects.length > 0 ? (
+                  <div className="space-y-4">
+                    {freelancerInProgressProjects.map((project) => (
+                      <div key={project.id} className="space-y-3">
+                        <ProjectCard key={project.id} project={toProjectCardData(project)} showBookmark={false} />
+                        <div className="flex justify-end">
+                          <Link href={`/projects/${project.id}/submit`}>
+                            <Button variant="outline" size="sm" className="gap-2">
+                              提交成果
+                              <ArrowUpRight className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptySection text="目前沒有需要提交成果的案件。" />
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-foreground">等待驗收</h4>
+                  <p className="text-xs text-muted-foreground">你已提交成果，正在等發案方確認。</p>
+                </div>
+                {freelancerSubmittedProjects.length > 0 ? (
+                  <div className="space-y-4">
+                    {freelancerSubmittedProjects.map((project) => (
+                      <div key={project.id} className="space-y-3">
+                        <ProjectCard project={toProjectCardData(project)} showBookmark={false} />
+                        <div className="flex justify-end">
+                          <Link href={`/projects/${project.id}`}>
+                            <Button variant="outline" size="sm" className="gap-2">
+                              查看案件
+                              <ArrowUpRight className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptySection text="目前沒有等待驗收的案件。" />
+                )}
+              </div>
+
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h4 className="text-sm font-semibold text-foreground">需要修改</h4>
+                  <p className="text-xs text-muted-foreground">發案方要求你調整後重新提交。</p>
+                </div>
+                {freelancerRevisionProjects.length > 0 ? (
+                  <div className="space-y-4">
+                    {freelancerRevisionProjects.map((project) => (
+                      <div key={project.id} className="space-y-3">
+                        <ProjectCard project={toProjectCardData(project)} showBookmark={false} />
+                        <div className="flex justify-end">
+                          <Link href={`/projects/${project.id}/submit`}>
+                            <Button variant="outline" size="sm" className="gap-2">
+                              重新提交
+                              <ArrowUpRight className="h-4 w-4" />
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptySection text="目前沒有需要修改後重交的案件。" />
+                )}
+              </div>
+            </div>
+          ) : (
+            <EmptySection text="目前沒有需要立即處理的接案任務。" />
+          )}
+        </div>
+
         <div className="flex flex-col gap-4">
           <div className="space-y-1">
             <h3 className="text-lg font-semibold text-foreground">我的申請</h3>
