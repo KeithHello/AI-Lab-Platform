@@ -6,6 +6,8 @@ import ProjectCard from '@/components/project/ProjectCard';
 import { ProjectCardData } from '@/types';
 import { Briefcase, Shield, Star, Terminal, Cpu, Coins, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
+export const dynamic = 'force-dynamic';
+
 export default async function HomePage() {
   let hotProjects: ProjectCardData[] = [];
   try {

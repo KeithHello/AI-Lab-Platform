@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import ProjectDetail from '@/components/project/ProjectDetail';
 import { notFound } from 'next/navigation';
 
+export const dynamic = 'force-dynamic';
+
 export default async function ProjectDetailPage({ params }: { params: { projectId: string } }) {
   const { userId } = auth();
   const devUserId = process.env.NODE_ENV === 'development'
