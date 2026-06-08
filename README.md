@@ -1,99 +1,214 @@
-# 接案平台 MVP (Freelancer Platform MVP)
+# Freelancer Platform MVP
 
-這是一個基於 **Next.js (App Router)**、**Prisma ORM** 與 **PostgreSQL (Supabase)** 構建的高效接案媒合平台 MVP。平台旨在提供一個安全、透明的交易閉環，涵蓋從案件發布、媒合、成果提交、雙盲評價到後台管理的完整流程，並整合了 GPT-5.4 作為 AI 輔助審核工具。
+這是一個以 `Next.js App Router`、`Prisma`、`PostgreSQL`、`Clerk` 和 `OpenAI API` 建構的接案平台 MVP。
 
----
+它不只是「發布案件」的工具，而是把接案合作中常見的溝通、驗收、修改、回饋與爭議處理，整理成一條完整且可追蹤的工作流。
 
-## 🚀 技術棧 (Tech Stack)
+## 這個平台解決什麼問題
 
-* **核心框架**: Next.js 14 (App Router, React 18)
-* **資料庫 ORM**: Prisma Client & Migrate
-* **資料庫服務**: PostgreSQL (搭配 Supabase 連結池)
-* **身份驗證與安全**: Clerk Auth
-* **樣式與 UI 元件**: Tailwind CSS, Radix UI, Lucide Icons, Shadcn UI
-* **AI 審核技術**: OpenAI GPT-5.4 REST API
-* **單元與整合測試**: Vitest
-* **程式碼檢查與格式化**: ESLint, TypeScript Type Checker
+### 對發案方
+- 案件需求常常寫得太簡略，導致接案者理解不一致
+- 從申請、成果提交到驗收，缺少一個明確的判斷標準
+- 修改要求與最終驗收容易流於訊息往來，難以追蹤
+- 一旦發生爭議，缺少可管理的舉報與糾紛入口
 
----
+### 對接案者
+- 很難快速判斷一個案件是否值得申請
+- 申請時不知道該如何寫出更有說服力的提案
+- 提交成果後，常常不清楚對方是「已看到」還是「卡在哪裡」
+- 驗收結果與合作回饋如果沒有結構化，會影響後續接案信任度
 
-## 🌟 核心功能特性
+### 對平台管理者
+- 需要一套後台機制來審核使用者、案件與內容
+- 舉報與糾紛必須可集中管理，而不是散落在對話中
+- 需要一些自動化流程，降低人工整理案件內容的成本
 
-### 1. AI 輔助審核 (REQ-25)
-* 整合 OpenAI GPT-5.4。當發案方填寫案件描述時，可一鍵點擊「AI 輔助審核」獲取描述的完整性、清晰度打分及具體的優化建議。
-* 當 `OPENAI_API_KEY` 未設置時，系統會自動流暢降級（Fallback）為基於關鍵字的本地離線規則審核。
+## 平台如何解決這些痛點
 
-### 2. 使用者個人公開頁面 (REQ-20)
-* 每位發案方與接案者均擁有專屬的公開個人頁面（`/users/[userId]`），展示基本簡介、專業技能標籤。
-* 展示**雙盲評價歷史**：僅在發案方與接案者雙方皆完成評價後，該案評價內容與星級才會公開展示，保護交易隱私。
+- 用 `Onboarding` 建立使用者角色、能力與技能標籤，讓平台知道他是發案方、接案者或兩者皆可
+- 用結構化案件表單，把背景、交付成果、驗收標準拆開，避免需求只寫一句話
+- 用 `AI 審核工作區` 幫助發案方整理案件內容，提升可讀性與可驗收性
+- 用明確的案件狀態機制串起申請、提交、驗收、修改與完成
+- 用通知系統把重要事件從聊天訊息中抽離出來
+- 用舉報與糾紛模組，讓平台可以處理風險事件
 
-### 3. 案件收藏與追蹤 (REQ-21)
-* 接案者可以在首頁或案件詳情頁面一鍵點擊收藏案件（Bookmark）。
-* 收藏狀態即時 toggle，且已收藏的案件會在使用者 Dashboard 的「我的收藏」區塊中集中展示，便於快速追蹤。
+## 主要功能
 
-### 4. 進階搜尋與篩選 (REQ-23)
-* 前台案件列表支持複雜篩選條件：
-  * 預算區間篩選（最小金額與最大金額）
-  * 截止日期區間篩選（起訖日期限制）
-  * 彈性排序：最新發布、預算由高到低、截止日期最近
+### 案件管理
+- 建立、編輯、草稿儲存與發布案件
+- 案件包含分類、技能標籤、預算、幣別、截止日期與保密需求
+- 公開案件列表支援搜尋、篩選與分頁
+- 案件卡片可顯示預算、截止日期、申請數、分類與狀態
 
-### 5. 全站系統分頁 (REQ-24)
-* 開發了高度可複用的通用 `<Pagination>` 元件。
-* 已應用於**前台案件列表頁面**以及**管理員後台**的「使用者管理頁面」與「案件管理頁面」，採用資料庫層級的 Server-side Skip/Take 查詢，性能優異。
+### 申請與提案
+- 接案者可以針對案件送出申請
+- 申請內容包含自我介紹、執行方式、預計天數與作品連結
+- 這能讓發案方更容易比較提案品質，而不是只看簡短訊息
 
-### 6. 站內通知系統 (REQ-22)
-* 全站核心業務事件均會觸發站內通知：
-  * 接案者申請案件 ➔ 發案方收到通知
-  * 發案方錄用接案者 ➔ 接案者收到通知
-  * 接案者提交成果 ➔ 發案方收到通知
-  * 發案方退回要求修改 ➔ 接案者收到通知
-  * 驗收完成/專案結束 ➔ 雙方收到通知
-* 頂部 Navbar 整合了通知鈴鐺與未讀計數 Badges，點擊即可展開下拉面板查閱通知，並支持標記單筆或全部已讀。
+### 成果提交與驗收
+- 接案者可提交 Demo、GitHub、文件與其他檔案連結
+- 發案方可直接通過驗收或要求修改
+- 驗收完成後案件進入完成狀態，並可進行評價
 
----
+### 評價與回饋
+- 支援星等評價、文字回饋與是否願意再次合作
+- 幫助建立合作紀錄與信任基礎
 
-## 📂 專案目錄結構
+### AI 輔助提案與案件整理
+- AI 會針對案件標題、背景、敘述、交付成果、驗收標準進行審核
+- 會輸出整體分數、亮點、風險、逐欄建議與建議稿
+- 可以直接把 AI 建議套回案件編輯區
+- 支援草稿保存，避免編輯內容中斷
+
+### 通知系統
+- 申請收到
+- 申請錄取 / 拒絕
+- 成果提交
+- 要求修改
+- 案件完成
+- 收到評價
+- 案件取消
+
+### 舉報與糾紛
+- 使用者可以提交舉報與案件糾紛
+- 管理員可在後台集中處理、駁回、解決或停用帳號
+
+### 後台管理
+- 使用者管理
+- 案件管理
+- 分類與技能標籤管理
+- 公告管理
+- 舉報管理
+- 糾紛管理
+- 設定管理
+
+## 核心流程圖
+
+### 1. 案件生命週期
+
+```mermaid
+flowchart LR
+  A[建立草稿 DRAFT] --> B[發布案件 OPEN]
+  B --> C[接案者申請]
+  C --> D[選定合作對象 IN_PROGRESS]
+  D --> E[接案者提交成果 SUBMITTED]
+  E --> F{發案方驗收}
+  F -->|通過| G[案件完成 COMPLETED]
+  F -->|要求修改| H[修改要求 REVISION_REQUESTED]
+  H --> E
+  G --> I[雙方評價]
+  B --> J[取消案件 CANCELLED]
+  A --> K[後台停用 DISABLED]
+```
+
+### 2. 驗收機制
+
+```mermaid
+sequenceDiagram
+  participant F as 發案方
+  participant P as 平台
+  participant W as 接案者
+
+  W->>P: 提交成果（Demo / GitHub / 文件 / 檔案）
+  P->>F: 顯示案件驗收頁
+  F->>P: 選擇通過驗收
+  P->>P: 將案件狀態改為 COMPLETED
+  P->>W: 通知案件完成，可進入評價
+
+  alt 驗收不通過
+    F->>P: 提出修改要求
+    P->>P: 將案件狀態改為 REVISION_REQUESTED
+    P->>W: 通知修改內容
+  end
+```
+
+### 3. AI 輔助提案 / 案件整理
+
+```mermaid
+flowchart TD
+  A[使用者輸入案件資料] --> B[AI 審核工作區]
+  B --> C[分析標題 / 背景 / 敘述 / 交付成果 / 驗收標準]
+  C --> D[產生分數、亮點、風險與建議稿]
+  D --> E[使用者逐欄修改]
+  E --> F[一鍵套用 AI 建議]
+  F --> G[保存草稿或返回案件表單]
+```
+
+## 技術棧
+
+- `Next.js 14` App Router
+- `React 18`
+- `TypeScript`
+- `Prisma ORM`
+- `PostgreSQL`
+- `Clerk`
+- `OpenAI API`
+- `Tailwind CSS`
+- `Radix UI`
+- `shadcn/ui`
+- `Lucide React`
+- `Vitest`
+
+## 專案結構
 
 ```text
 freelancer_platform_mvp/
-├── actions/                  # Next.js Server Actions (業務邏輯與資料庫操作)
-│   ├── admin.actions.ts      # 管理後台操作 (停用/啟用、審核、分頁查詢)
-│   ├── ai-review.actions.ts  # GPT-5.4 案件審核邏輯
-│   ├── bookmark.actions.ts   # 案件收藏 toggle
-│   └── notification.actions.ts# 站內通知獲取與狀態標記
-├── app/                      # App Router 路由頁面
-│   ├── (auth)/               # 需登入之路由群組 (Dashboard, Onboarding, Admin)
-│   ├── (public)/             # 免登入公開路由群組 (Projects, Users)
-│   └── api/                  # API 路由 (如 Clerk Webhooks)
-├── components/               # UI 與 Layout 元件
-│   ├── admin/                # 管理後台專用表格與排版
-│   ├── layout/               # Navbar (含通知鈴鐺), Footer
-│   ├── project/              # 案件卡片、搜尋列、篩選器、收藏按鈕
-│   ├── ui/                   # 通用底層 UI 元件 (Shadcn UI, Pagination)
-│   └── user/                 # 個人公開履歷卡片
-├── hooks/                    # 客製化 React Hooks (包含 useFilterParams)
-├── lib/                      # 全域共用工具與客戶端配置 (Prisma, OpenAI)
-├── prisma/                   # 資料庫 Schema 與 Seed 腳本
-└── __tests__/                # 單元與整合測試用例 (Vitest)
+├── actions/         # Server Actions：案件、申請、提交、評價、通知、舉報、糾紛、後台
+├── app/             # Next.js App Router 頁面與 API routes
+├── components/      # 可重用 UI 與頁面元件
+├── hooks/           # React hooks
+├── lib/             # Prisma、OpenAI、權限、驗證、通知與 AI 審核工具
+├── prisma/          # Schema 與 seed 資料
+├── types/           # 與 Prisma 對應的前端型別
+└── __tests__/       # Vitest 測試
 ```
 
----
+## 核心資料型別
 
-## 🛠 本地開發設定與運行步驟
+- `User`
+- `Category`
+- `SkillTag`
+- `Project`
+- `Application`
+- `Submission`
+- `Review`
+- `Notification`
+- `Report`
+- `Dispute`
+- `Announcement`
 
-### 1. 安裝依賴
-請在專案根目錄執行：
+## 案件狀態
+
+- `DRAFT`
+- `OPEN`
+- `IN_PROGRESS`
+- `SUBMITTED`
+- `REVISION_REQUESTED`
+- `COMPLETED`
+- `CANCELLED`
+- `DISABLED`
+
+## 開發環境需求
+
+- Node.js 18+
+- PostgreSQL
+- npm
+
+## 安裝與啟動
+
+### 1. 安裝套件
+
 ```bash
 npm install
 ```
 
-### 2. 環境變數配置 (.env)
-在專案根目錄下創建 `.env` 與 `.env.local` 檔案，配置以下關鍵變數（請參考 `.env.example`）：
+### 2. 設定環境變數
+
+建立 `.env.local`，可參考 `.env.example`。
+
 ```env
-# 資料庫連線
 DATABASE_URL="postgresql://username:password@host:port/database"
 
-# Clerk 驗證配置
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
@@ -101,32 +216,53 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/onboarding
 NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/onboarding
 
-# OpenAI API 金鑰 (用於 GPT-5.4 審核)
 OPENAI_API_KEY="sk-proj-..."
+OPENAI_MODEL="gpt-4o-mini"
 ```
 
-### 3. 資料庫結構推送與客戶端生成
-執行以下指令將 Prisma Schema 同步至 PostgreSQL 並生成 TypeScript 型別客戶端：
+### 3. 初始化資料庫
+
 ```bash
 npx prisma db push
 npx prisma generate
 ```
 
-### 4. 數據庫 Seeding (導入 23 個用戶與 100 個專案)
-執行 Prisma Seed 腳本以導入豐富的模擬測試數據（詳情請參考 `MOCK_DATA.md`）：
+### 4. 匯入種子資料
+
 ```bash
 npx prisma db seed
 ```
 
 ### 5. 啟動開發伺服器
-運行本地開發伺服器：
+
 ```bash
 npm run dev
 ```
-瀏覽器打開 **[http://localhost:3000](http://localhost:3000)** (若 3000 埠被佔用，請查看終端輸出的埠號，如 3001) 即可開始體驗平台。
 
-### 6. 運行測試
-執行專案的單元與整合測試：
+預設會啟動在 `http://localhost:3000`
+
+## 測試
+
 ```bash
 npm run test
 ```
+
+## 建置
+
+```bash
+npm run build
+```
+
+## 既有測試覆蓋
+
+- currency
+- permissions
+- types
+- validations
+
+## 備註
+
+- 專案內已有 Prisma seed 與 mock data，可用來快速建立開發環境。
+- AI 輔助功能會呼叫 OpenAI API；若未設定 `OPENAI_API_KEY`，相關功能將無法使用。
+- 後台功能目前已涵蓋使用者、案件、分類、技能標籤、公告、舉報、糾紛與設定等管理頁面。
+
